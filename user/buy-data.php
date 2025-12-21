@@ -1,0 +1,231 @@
+<?php
+/**
+ * 2SureSub - Buy Data (with Inlomax API)
+ */
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/InlomaxAPI.php';
+requireLogin();
+
+$user = getCurrentUser();
+$wallet = getUserWallet($user['id']);
+$networks = dbFetchAll("SELECT * FROM networks WHERE status = 'active' ORDER BY name");
+$selectedNetwork = $_GET['network'] ?? ($networks[0]['id'] ?? 1);
+$dataPlans = dbFetchAll("SELECT * FROM data_plans WHERE network_id = ? AND status = 'active' ORDER BY price_user ASC", [$selectedNetwork]);
+
+$error = ''; $success = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $networkId = (int)$_POST['network_id'];
+    $planId = (int)$_POST['plan_id'];
+    $phoneNumber = cleanInput($_POST['phone_number']);
+    
+    if (empty($phoneNumber) || !isValidPhone($phoneNumber)) {
+        $error = 'Please enter a valid phone number';
+    } elseif (!$planId) {
+        $error = 'Please select a data plan';
+    } else {
+        $plan = dbFetchOne("SELECT dp.*, n.name as network_name, n.code as network_code FROM data_plans dp JOIN networks n ON dp.network_id = n.id WHERE dp.id = ?", [$planId]);
+        
+        if ($plan) {
+            $price = getPrice($plan['price_user'], $plan['price_reseller'], $user['role']);
+            
+            if ($wallet['balance'] < $price) {
+                $error = 'Insufficient balance. Please fund your wallet.';
+            } else {
+                $reference = generateReference('DATA');
+                
+                // Get Inlomax API
+                $inlomax = getInlomaxAPI();
+                
+                if ($inlomax->isConfigured()) {
+                    // Use real API
+                    // Deduct wallet first
+                    if (deductWallet($user['id'], $price, "Data: {$plan['data_amount']} {$plan['network_name']}", $reference)) {
+                        
+                        // Call Inlomax API
+                        $apiResponse = $inlomax->buyData($plan['plan_code'], $phoneNumber);
+                        
+                        // Log the API response
+                        $apiStatus = $apiResponse['status'] ?? 'failed';
+                        $apiMessage = $apiResponse['message'] ?? 'Unknown error';
+                        
+                        if ($apiStatus === 'success') {
+                            // Transaction successful
+                            $externalRef = $apiResponse['data']['reference'] ?? '';
+                            
+                            dbInsert("INSERT INTO transactions (user_id, type, network, phone_number, amount, cost_price, plan_name, reference, external_reference, api_response, status) VALUES (?, 'data', ?, ?, ?, ?, ?, ?, ?, ?, 'completed')",
+                                [$user['id'], $plan['network_name'], $phoneNumber, $price, $plan['cost_price'], $plan['plan_name'], $reference, $externalRef, json_encode($apiResponse)]);
+                            
+                            logActivity('data_purchase', "Purchased {$plan['data_amount']} for $phoneNumber via Inlomax", 'transactions');
+                            createNotification($user['id'], 'Data Purchase Successful', "Your {$plan['data_amount']} data for $phoneNumber was successful.", 'success');
+                            
+                            $wallet = getUserWallet($user['id']);
+                            $success = "Success! {$plan['data_amount']} sent to $phoneNumber.";
+                            
+                        } elseif ($apiStatus === 'processing') {
+                            // Transaction pending
+                            $externalRef = $apiResponse['data']['reference'] ?? '';
+                            
+                            dbInsert("INSERT INTO transactions (user_id, type, network, phone_number, amount, cost_price, plan_name, reference, external_reference, api_response, status) VALUES (?, 'data', ?, ?, ?, ?, ?, ?, ?, ?, 'processing')",
+                                [$user['id'], $plan['network_name'], $phoneNumber, $price, $plan['cost_price'], $plan['plan_name'], $reference, $externalRef, json_encode($apiResponse)]);
+                            
+                            logActivity('data_purchase', "Data purchase processing for $phoneNumber", 'transactions');
+                            $wallet = getUserWallet($user['id']);
+                            $success = "Processing! Your {$plan['data_amount']} data for $phoneNumber is being processed.";
+                            
+                        } else {
+                            // Transaction failed - refund
+                            creditWallet($user['id'], $price, "Refund: Data purchase failed", $reference . '-REF');
+                            
+                            dbInsert("INSERT INTO transactions (user_id, type, network, phone_number, amount, cost_price, plan_name, reference, api_response, status) VALUES (?, 'data', ?, ?, ?, ?, ?, ?, ?, 'failed')",
+                                [$user['id'], $plan['network_name'], $phoneNumber, $price, $plan['cost_price'], $plan['plan_name'], $reference, json_encode($apiResponse)]);
+                            
+                            logActivity('data_purchase_failed', "Data purchase failed: $apiMessage", 'transactions');
+                            $wallet = getUserWallet($user['id']);
+                            $error = "Transaction failed: $apiMessage. Your wallet has been refunded.";
+                        }
+                    } else {
+                        $error = 'Wallet deduction failed. Please try again.';
+                    }
+                } else {
+                    // Simulated mode (API not configured)
+                    if (deductWallet($user['id'], $price, "Data: {$plan['data_amount']} {$plan['network_name']}", $reference)) {
+                        dbInsert("INSERT INTO transactions (user_id, type, network, phone_number, amount, cost_price, plan_name, reference, status) VALUES (?, 'data', ?, ?, ?, ?, ?, ?, 'completed')",
+                            [$user['id'], $plan['network_name'], $phoneNumber, $price, $plan['cost_price'], $plan['plan_name'], $reference]);
+                        logActivity('data_purchase', "Purchased {$plan['data_amount']} for $phoneNumber (simulated)", 'transactions');
+                        createNotification($user['id'], 'Data Purchase Successful', "Your {$plan['data_amount']} data for $phoneNumber was successful.", 'success');
+                        $wallet = getUserWallet($user['id']);
+                        $success = "Success! {$plan['data_amount']} sent to $phoneNumber. (Simulated - Configure API for live transactions)";
+                    } else {
+                        $error = 'Transaction failed. Please try again.';
+                    }
+                }
+            }
+        }
+    }
+}
+
+$pageTitle = 'Buy Data';
+include __DIR__ . '/../includes/header.php';
+include __DIR__ . '/../includes/sidebar.php';
+?>
+
+<!-- Main Content with proper mobile spacing -->
+<main class="min-h-screen pt-16 lg:pt-0 lg:ml-72">
+    <header class="bg-white border-b border-gray-100 px-4 py-4 sticky top-16 lg:top-0 z-20">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-lg lg:text-2xl font-bold text-gray-900">Buy Data</h1>
+                <p class="text-sm text-gray-500 hidden sm:block">Purchase data bundles for any network</p>
+            </div>
+            <div class="flex items-center gap-2 px-3 py-2 bg-primary-50 rounded-xl">
+                <i class="fas fa-wallet text-primary-500 text-sm"></i>
+                <span class="font-semibold text-primary-600 text-sm"><?php echo formatMoney($wallet['balance']); ?></span>
+            </div>
+        </div>
+    </header>
+    
+    <div class="p-4 lg:p-6">
+        <?php if ($error): ?>
+        <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-600 text-sm">
+            <i class="fas fa-exclamation-circle"></i><?php echo $error; ?>
+        </div>
+        <?php endif; ?>
+        
+        <?php if ($success): ?>
+        <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl flex items-center gap-2 text-green-600 text-sm">
+            <i class="fas fa-check-circle"></i><?php echo $success; ?>
+        </div>
+        <?php endif; ?>
+        
+        <form method="POST" class="max-w-2xl mx-auto">
+            <?php echo csrfField(); ?>
+            
+            <!-- Networks -->
+            <div class="bg-white rounded-2xl border shadow-sm p-4 mb-4">
+                <h2 class="font-semibold text-gray-900 mb-3 text-sm">Select Network</h2>
+                <div class="grid grid-cols-4 gap-2 sm:gap-4">
+                    <?php foreach ($networks as $network): ?>
+                    <label class="cursor-pointer">
+                        <input type="radio" name="network_id" value="<?php echo $network['id']; ?>" 
+                               class="peer sr-only" <?php echo $network['id'] == $selectedNetwork ? 'checked' : ''; ?>
+                               onchange="location.href='?network=<?php echo $network['id']; ?>'">
+                        <div class="p-2 sm:p-4 rounded-xl border-2 border-gray-200 peer-checked:border-primary-500 peer-checked:bg-primary-50 text-center transition-all">
+                            <div class="w-10 h-10 sm:w-14 sm:h-14 rounded-lg flex items-center justify-center mx-auto mb-1 sm:mb-2 <?php 
+                                echo match(strtolower($network['code'])) {
+                                    'mtn' => 'bg-yellow-400',
+                                    'airtel' => 'bg-red-500',
+                                    'glo' => 'bg-green-500',
+                                    '9mobile' => 'bg-emerald-600',
+                                    default => 'bg-gray-400'
+                                };
+                            ?>">
+                                <span class="text-white font-bold text-xs sm:text-sm"><?php echo strtoupper(substr($network['name'], 0, 3)); ?></span>
+                            </div>
+                            <span class="text-xs sm:text-sm font-medium text-gray-700"><?php echo $network['name']; ?></span>
+                        </div>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            
+            <!-- Plans -->
+            <div class="bg-white rounded-2xl border shadow-sm p-4 mb-4">
+                <h2 class="font-semibold text-gray-900 mb-3 text-sm">Select Data Plan</h2>
+                <input type="hidden" name="plan_id" id="selected-plan" value="">
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+                    <?php foreach ($dataPlans as $plan): 
+                        $price = getPrice($plan['price_user'], $plan['price_reseller'], $user['role']);
+                    ?>
+                    <div class="plan-card p-3 rounded-xl border-2 border-gray-200 cursor-pointer transition-all text-center"
+                         onclick="selectPlan(<?php echo $plan['id']; ?>, this)">
+                        <p class="text-lg sm:text-2xl font-bold text-gray-900"><?php echo $plan['data_amount']; ?></p>
+                        <p class="text-xs text-gray-500 mb-1"><?php echo $plan['validity']; ?></p>
+                        <p class="text-sm sm:text-lg font-semibold text-primary-600"><?php echo formatMoney($price); ?></p>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            
+            <!-- Phone -->
+            <div class="bg-white rounded-2xl border shadow-sm p-4 mb-4">
+                <h2 class="font-semibold text-gray-900 mb-3 text-sm">Phone Number</h2>
+                <div class="relative">
+                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"><i class="fas fa-phone"></i></span>
+                    <input type="tel" name="phone_number" id="phone_number" required
+                           class="w-full pl-12 pr-4 py-3 sm:py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent text-base"
+                           placeholder="08012345678"
+                           value="<?php echo htmlspecialchars($_POST['phone_number'] ?? ''); ?>">
+                </div>
+            </div>
+            
+            <button type="submit" id="submit-btn"
+                    class="w-full py-4 bg-gradient-primary text-white font-semibold rounded-xl shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                    disabled>
+                <i class="fas fa-paper-plane"></i> Buy Data
+            </button>
+        </form>
+    </div>
+</main>
+
+<script>
+let selectedPlanId = null;
+function selectPlan(planId, el) {
+    document.querySelectorAll('.plan-card').forEach(c => {
+        c.classList.remove('border-primary-500', 'bg-primary-50');
+        c.classList.add('border-gray-200');
+    });
+    el.classList.remove('border-gray-200');
+    el.classList.add('border-primary-500', 'bg-primary-50');
+    document.getElementById('selected-plan').value = planId;
+    selectedPlanId = planId;
+    updateBtn();
+}
+function updateBtn() {
+    const phone = document.getElementById('phone_number').value.trim();
+    document.getElementById('submit-btn').disabled = !(selectedPlanId && phone.length >= 10);
+}
+document.getElementById('phone_number').addEventListener('input', updateBtn);
+</script>
+<script src="<?php echo APP_URL; ?>/assets/js/app.js"></script>
+</body></html>
