@@ -105,6 +105,18 @@ include __DIR__ . '/../includes/sidebar.php';
                     </div>
                     <span class="text-xs lg:text-sm font-medium text-gray-700">Fund</span>
                 </a>
+                <a href="giveaways.php" class="group bg-blue-50 border-blue-100 rounded-xl p-3 lg:p-6 border shadow-sm hover:shadow-lg transition-all text-center relative overflow-hidden">
+                    <div class="absolute -top-1 -right-1">
+                        <span class="flex h-3 w-3">
+                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                          <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                        </span>
+                    </div>
+                    <div class="w-10 h-10 lg:w-14 lg:h-14 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform">
+                        <i class="fas fa-gift text-white text-lg lg:text-2xl"></i>
+                    </div>
+                    <span class="text-xs lg:text-sm font-bold text-blue-700">Giveaway</span>
+                </a>
             </div>
         </div>
         

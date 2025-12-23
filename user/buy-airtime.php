@@ -170,11 +170,107 @@ include __DIR__ . '/../includes/sidebar.php';
                 </div>
             </div>
             
-            <button type="submit" class="w-full py-4 bg-gradient-primary text-white font-semibold rounded-xl shadow-lg flex items-center justify-center gap-2">
-                <i class="fas fa-paper-plane"></i> Buy Airtime
+            <button type="submit" id="submit-btn" class="w-full py-4 bg-gradient-primary text-white font-bold text-lg rounded-2xl shadow-xl hover:shadow-primary-200 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-3">
+                <i class="fas fa-paper-plane"></i> Buy Airtime Now
             </button>
         </form>
     </div>
 </main>
+
+<!-- Purchase Confirmation Modal -->
+<div id="confirm-modal" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm hidden">
+    <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl scale-95 opacity-0 transition-all duration-300" id="modal-content">
+        <div class="p-6 text-center">
+            <div class="w-20 h-20 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-phone text-3xl"></i>
+            </div>
+            <h3 class="text-xl font-bold text-gray-900 mb-1">Confirm Purchase</h3>
+            <p class="text-gray-500 text-sm mb-6">Please verify the details below</p>
+            
+            <div class="bg-gray-50 rounded-2xl p-4 mb-6 space-y-3">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-500">Network</span>
+                    <span class="font-bold text-gray-900" id="conf-network">-</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-500">Phone Number</span>
+                    <span class="font-bold text-gray-900" id="conf-phone">-</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-500">Amount</span>
+                    <span class="font-bold text-blue-600" id="conf-amount">-</span>
+                </div>
+                <div class="pt-3 border-t border-gray-200 flex justify-between items-center">
+                    <span class="text-gray-900 font-bold">Total Cost</span>
+                    <span class="text-xl font-black text-primary-600" id="conf-total">-</span>
+                </div>
+            </div>
+            
+            <div class="flex gap-3">
+                <button type="button" onclick="closeConfirmModal()" class="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl transition-colors">
+                    Back
+                </button>
+                <button type="button" id="final-confirm-btn" class="flex-1 py-3 bg-gradient-primary text-white font-bold rounded-xl shadow-lg hover:shadow-primary-200 hover:-translate-y-0.5 transition-all">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+const buyForm = document.querySelector('form');
+const confirmModal = document.getElementById('confirm-modal');
+const modalContent = document.getElementById('modal-content');
+const isReseller = <?php echo $user['role'] === 'reseller' ? 'true' : 'false'; ?>;
+
+buyForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const network = buyForm.querySelector('input[name="network_id"]:checked');
+    const phone = buyForm.querySelector('input[name="phone_number"]').value.trim();
+    const amount = parseFloat(buyForm.querySelector('input[name="amount"]').value);
+    
+    if (!network) {
+        Toast.error('Please select a network');
+        return;
+    }
+    if (phone.length < 10) {
+        Toast.error('Please enter a valid phone number');
+        return;
+    }
+    if (!amount || amount < 50) {
+        Toast.error('Minimum amount is ₦50');
+        return;
+    }
+    
+    const networkName = network.nextElementSibling.querySelector('span.text-gray-700').textContent;
+    const finalAmount = isReseller ? amount * 0.98 : amount;
+    
+    // Fill modal
+    document.getElementById('conf-network').textContent = networkName;
+    document.getElementById('conf-phone').textContent = phone;
+    document.getElementById('conf-amount').textContent = '₦' + amount.toLocaleString();
+    document.getElementById('conf-total').textContent = '₦' + finalAmount.toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    // Show modal
+    confirmModal.classList.remove('hidden');
+    setTimeout(() => {
+        modalContent.classList.remove('scale-95', 'opacity-0');
+        modalContent.classList.add('scale-100', 'opacity-100');
+    }, 10);
+});
+
+function closeConfirmModal() {
+    modalContent.classList.replace('scale-100', 'scale-95');
+    modalContent.classList.replace('opacity-100', 'opacity-0');
+    setTimeout(() => {
+        confirmModal.classList.add('hidden');
+    }, 300);
+}
+
+document.getElementById('final-confirm-btn').addEventListener('click', () => {
+    buyForm.submit();
+});
+</script>
 <script src="<?php echo APP_URL; ?>/assets/js/app.js"></script>
 </body></html>

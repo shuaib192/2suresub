@@ -19,7 +19,9 @@ $menuItems = [
         ['icon' => 'fa-wallet', 'label' => 'Fund Wallet', 'url' => APP_URL . '/user/fund-wallet.php', 'page' => 'fund-wallet.php'],
         ['icon' => 'fa-clock-rotate-left', 'label' => 'Transactions', 'url' => APP_URL . '/user/transactions.php', 'page' => 'transactions.php'],
         ['icon' => 'fa-bell', 'label' => 'Notifications', 'url' => APP_URL . '/user/notifications.php', 'page' => 'notifications.php'],
+        ['icon' => 'fa-gift', 'label' => 'My Giveaways', 'url' => APP_URL . '/user/giveaways.php', 'page' => 'giveaways.php'],
         ['icon' => 'fa-headset', 'label' => 'Support', 'url' => APP_URL . '/user/support.php', 'page' => 'support.php'],
+        ['icon' => 'fa-code', 'label' => 'Developer API', 'url' => APP_URL . '/user/developer.php', 'page' => 'developer.php'],
         ['icon' => 'fa-user', 'label' => 'Profile', 'url' => APP_URL . '/user/profile.php', 'page' => 'profile.php'],
     ],
     'reseller' => [

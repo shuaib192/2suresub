@@ -159,39 +159,171 @@ include __DIR__ . '/../includes/sidebar.php';
                     <?php foreach ($cablePlans as $plan): 
                         $price = getPrice($plan['price_user'], $plan['price_reseller'], $user['role']);
                     ?>
-                    <div class="plan-card p-3 rounded-xl border-2 border-gray-200 flex items-center justify-between cursor-pointer transition-all"
-                         onclick="selectPlan(<?php echo $plan['id']; ?>, '<?php echo $plan['plan_code']; ?>', this)">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
-                                <i class="fas fa-tv text-primary-500"></i>
+                    <div class="plan-card p-4 rounded-2xl border-2 border-gray-100 flex items-center justify-between cursor-pointer transition-all hover:border-primary-300 relative overflow-hidden group mb-2"
+                         onclick="selectCablePlan(<?php echo $plan['id']; ?>, '<?php echo $plan['plan_code']; ?>', '<?php echo $plan['plan_name']; ?>', '<?php echo formatMoney($price); ?>', this)">
+                        <div class="selected-check absolute top-2 right-2 hidden">
+                            <i class="fas fa-check-circle text-primary-500"></i>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 bg-primary-50 text-primary-500 rounded-xl flex items-center justify-center group-hover:bg-primary-500 group-hover:text-white transition-all">
+                                <i class="fas fa-tv text-xl"></i>
                             </div>
                             <div>
-                                <h3 class="font-medium text-gray-900 text-sm"><?php echo $plan['plan_name']; ?></h3>
-                                <p class="text-xs text-gray-500"><?php echo $plan['validity']; ?></p>
+                                <h3 class="font-bold text-gray-900 group-hover:text-primary-600 transition-colors"><?php echo $plan['plan_name']; ?></h3>
+                                <p class="text-xs text-gray-400 font-medium uppercase tracking-wider"><?php echo $plan['validity']; ?></p>
                             </div>
                         </div>
-                        <p class="text-lg font-bold text-primary-600"><?php echo formatMoney($price); ?></p>
+                        <p class="text-xl font-black text-primary-600"><?php echo formatMoney($price); ?></p>
                     </div>
                     <?php endforeach; ?>
                 </div>
             </div>
             
-            <button type="submit" id="submit-btn" disabled class="w-full py-4 bg-gradient-primary text-white font-semibold rounded-xl shadow-lg disabled:opacity-50 flex items-center justify-center gap-2">
-                <i class="fas fa-paper-plane"></i> Subscribe Now
+            <button type="submit" id="submit-btn" class="w-full py-4 bg-gradient-primary text-white font-bold text-lg rounded-2xl shadow-xl hover:shadow-primary-200 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-3">
+                <i class="fas fa-shopping-cart"></i> Subscribe Now
             </button>
         </form>
     </div>
 </main>
 
+<!-- Purchase Confirmation Modal -->
+<div id="confirm-modal" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm hidden">
+    <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl scale-95 opacity-0 transition-all duration-300" id="modal-content">
+        <div class="p-6 text-center">
+            <div class="w-20 h-20 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-tv text-3xl"></i>
+            </div>
+            <h3 class="text-xl font-bold text-gray-900 mb-1">Confirm Subscription</h3>
+            <p class="text-gray-500 text-sm mb-6">Please verify the details below</p>
+            
+            <div class="bg-gray-50 rounded-2xl p-4 mb-6 space-y-3">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-500">Provider</span>
+                    <span class="font-bold text-gray-900"><?php 
+                        foreach($providers as $p) if($p['id'] == $selectedProvider) echo $p['name'];
+                    ?></span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-500">Package</span>
+                    <span class="font-bold text-blue-600" id="conf-plan">-</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-500">IUC Number</span>
+                    <span class="font-bold text-gray-900" id="conf-iuc">-</span>
+                </div>
+                <div class="pt-3 border-t border-gray-200 flex justify-between items-center">
+                    <span class="text-gray-900 font-bold">Total Cost</span>
+                    <span class="text-xl font-black text-primary-600" id="conf-amount">-</span>
+                </div>
+            </div>
+            
+            <div class="flex gap-3">
+                <button type="button" onclick="closeConfirmModal()" class="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl transition-colors">
+                    Back
+                </button>
+                <button type="button" id="final-confirm-btn" class="flex-1 py-3 bg-gradient-primary text-white font-bold rounded-xl shadow-lg hover:shadow-primary-200 hover:-translate-y-0.5 transition-all">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 let selectedPlanCode = '';
-function selectPlan(planId, planCode, el) {
-    document.querySelectorAll('.plan-card').forEach(c => { c.classList.remove('border-primary-500', 'bg-primary-50'); c.classList.add('border-gray-200'); });
-    el.classList.remove('border-gray-200'); el.classList.add('border-primary-500', 'bg-primary-50');
+let selectedPlanName = '';
+let selectedPlanAmount = '';
+
+function selectCablePlan(planId, planCode, name, amount, el) {
+    document.querySelectorAll('.plan-card').forEach(c => {
+        c.classList.remove('border-primary-500', 'bg-primary-50', 'ring-4', 'ring-primary-100');
+        c.classList.add('border-gray-100');
+        c.querySelector('.selected-check').classList.add('hidden');
+    });
+    
+    el.classList.remove('border-gray-100');
+    el.classList.add('border-primary-500', 'bg-primary-50', 'ring-4', 'ring-primary-100');
+    el.querySelector('.selected-check').classList.remove('hidden');
+    
     document.getElementById('selected-plan').value = planId;
     selectedPlanCode = planCode;
-    document.getElementById('submit-btn').disabled = false;
+    selectedPlanName = name;
+    selectedPlanAmount = amount;
+    
+    // If IUC is already entered, verify it for the new plan
+    const iuc = document.getElementById('iuc-input').value;
+    if (iuc.length >= 10) verifyIUC();
 }
+
+async function verifyIUC() {
+    const iuc = document.getElementById('iuc-input').value;
+    const plan = selectedPlanCode;
+    const infoDiv = document.getElementById('customer-name');
+    
+    if (iuc.length < 10 || !plan) return;
+    
+    infoDiv.classList.remove('hidden');
+    infoDiv.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Verifying...';
+    
+    try {
+        const response = await fetch(`?verify=1&iuc=${iuc}&plan=${plan}`);
+        const result = await response.json();
+        
+        if (result.status === 'success' && result.data && result.data.customerName) {
+            infoDiv.innerHTML = `<i class="fas fa-check-circle mr-1"></i> ${result.data.customerName}`;
+            infoDiv.classList.replace('text-red-600', 'text-green-600');
+        } else {
+            infoDiv.innerHTML = `<i class="fas fa-times-circle mr-1"></i> ${result.message || 'Invalid IUC number'}`;
+            infoDiv.classList.replace('text-green-600', 'text-red-600');
+        }
+    } catch (e) {
+        infoDiv.innerHTML = '<i class="fas fa-exclamation-circle mr-1"></i> Verification failed';
+    }
+}
+
+document.getElementById('iuc-input').addEventListener('blur', verifyIUC);
+
+const buyForm = document.querySelector('form');
+const confirmModal = document.getElementById('confirm-modal');
+const modalContent = document.getElementById('modal-content');
+
+buyForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const iuc = document.getElementById('iuc-input').value.trim();
+    if (!selectedPlanCode) {
+        Toast.error('Please select a package first');
+        return;
+    }
+    if (iuc.length < 10) {
+        Toast.error('Please enter a valid IUC number');
+        return;
+    }
+    
+    // Fill modal
+    document.getElementById('conf-plan').textContent = selectedPlanName;
+    document.getElementById('conf-iuc').textContent = iuc;
+    document.getElementById('conf-amount').textContent = selectedPlanAmount;
+    
+    // Show modal
+    confirmModal.classList.remove('hidden');
+    setTimeout(() => {
+        modalContent.classList.remove('scale-95', 'opacity-0');
+        modalContent.classList.add('scale-100', 'opacity-100');
+    }, 10);
+});
+
+function closeConfirmModal() {
+    modalContent.classList.replace('scale-100', 'scale-95');
+    modalContent.classList.replace('opacity-100', 'opacity-0');
+    setTimeout(() => {
+        confirmModal.classList.add('hidden');
+    }, 300);
+}
+
+document.getElementById('final-confirm-btn').addEventListener('click', () => {
+    buyForm.submit();
+});
 </script>
 <script src="<?php echo APP_URL; ?>/assets/js/app.js"></script>
 </body></html>

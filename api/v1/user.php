@@ -4,10 +4,8 @@
  */
 require_once __DIR__ . '/api.php';
 
-$userId = $_SESSION['user_id'] ?? null;
-if (!$userId) {
-    apiResponse(false, 'Unauthorized', null, 401);
-}
+// The global $user variable is already set in api.php
+$userId = $user['id'];
 
 $user = dbFetchOne("SELECT id, name, email, role, created_at FROM users WHERE id = ?", [$userId]);
 $wallet = getUserWallet($userId);

@@ -79,14 +79,19 @@ include __DIR__ . '/../includes/sidebar.php';
                             <p class="text-xs text-gray-500 truncate"><?php echo $txn['phone_number'] ?: $txn['smart_card_number'] ?: $txn['reference']; ?></p>
                         </div>
                     </div>
-                    <div class="text-right flex-shrink-0">
-                        <p class="font-semibold text-gray-900 text-sm"><?php echo formatMoney($txn['amount']); ?></p>
-                        <div class="flex items-center gap-2 justify-end">
-                            <span class="inline-block px-2 py-0.5 text-xs rounded-full <?php
-                                echo $txn['status'] === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700';
-                            ?>"><?php echo ucfirst($txn['status']); ?></span>
-                            <span class="text-xs text-gray-400"><?php echo timeAgo($txn['created_at']); ?></span>
+                    <div class="flex items-center gap-4">
+                        <div class="text-right hidden sm:block">
+                            <p class="font-semibold text-gray-900 text-sm"><?php echo formatMoney($txn['amount']); ?></p>
+                            <div class="flex items-center gap-2 justify-end">
+                                <span class="inline-block px-2 py-0.5 text-xs rounded-full <?php
+                                    echo $txn['status'] === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700';
+                                ?>"><?php echo ucfirst($txn['status']); ?></span>
+                                <span class="text-xs text-gray-400"><?php echo timeAgo($txn['created_at']); ?></span>
+                            </div>
                         </div>
+                        <button onclick='viewTxn(<?php echo json_encode($txn); ?>)' class="p-2 text-gray-400 hover:text-primary-600 transition-colors">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -105,5 +110,115 @@ include __DIR__ . '/../includes/sidebar.php';
         </div>
     </div>
 </main>
+<div id="txn-modal" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm hidden">
+    <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl scale-95 opacity-0 transition-all duration-300" id="modal-content">
+        <div class="p-6">
+            <div class="text-center mb-6">
+                <div id="txn-icon-container" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i id="txn-icon" class="fas text-2xl"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900" id="txn-type-title">Transaction Details</h3>
+                <p class="text-gray-500 text-xs" id="txn-date">-</p>
+            </div>
+            
+            <div class="bg-gray-50 rounded-2xl p-4 space-y-3 mb-6">
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-gray-500 font-medium">Reference</span>
+                    <span class="font-bold text-gray-900" id="txn-ref">-</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-gray-500 font-medium">Beneficiary</span>
+                    <span class="font-bold text-gray-900" id="txn-phone">-</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-gray-500 font-medium">Description</span>
+                    <span class="font-bold text-gray-900 text-right text-xs max-w-[150px]" id="txn-desc">-</span>
+                </div>
+                <div class="pt-3 border-t border-gray-200 flex justify-between items-center">
+                    <span class="text-gray-900 font-bold">Amount</span>
+                    <span class="text-lg font-black text-primary-600" id="txn-amount">-</span>
+                </div>
+                <div class="flex justify-between items-center text-xs pt-1">
+                    <span class="text-gray-500 font-medium">Status</span>
+                    <span id="txn-status" class="px-2 py-0.5 rounded-full font-bold uppercase">-</span>
+                </div>
+            </div>
+            
+            <div class="flex gap-3">
+                <button onclick="closeTxnModal()" class="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl transition-colors">
+                    Close
+                </button>
+                <a id="receipt-btn" href="#" target="_blank" class="flex-1 py-3 bg-gradient-primary text-white font-bold rounded-xl shadow-lg text-center">
+                    <i class="fas fa-print mr-1"></i> Receipt
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const modal = document.getElementById('txn-modal');
+const modalContent = document.getElementById('modal-content');
+
+function viewTxn(txn) {
+    // Basic fields
+    document.getElementById('txn-type-title').textContent = txn.type.charAt(0).toUpperCase() + txn.type.slice(1);
+    document.getElementById('txn-date').textContent = new Date(txn.created_at).toLocaleString();
+    document.getElementById('txn-ref').textContent = txn.reference;
+    document.getElementById('txn-phone').textContent = txn.phone_number || txn.smart_card_number || 'N/A';
+    document.getElementById('txn-desc').textContent = txn.plan_name || txn.description || '-';
+    document.getElementById('txn-amount').textContent = '₦' + parseFloat(txn.amount).toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    // Status color
+    const statusEl = document.getElementById('txn-status');
+    statusEl.textContent = txn.status;
+    if (txn.status === 'completed') {
+        statusEl.className = 'px-2 py-0.5 rounded-full font-bold uppercase bg-green-100 text-green-700';
+    } else if (txn.status === 'failed') {
+        statusEl.className = 'px-2 py-0.5 rounded-full font-bold uppercase bg-red-100 text-red-700';
+    } else {
+        statusEl.className = 'px-2 py-0.5 rounded-full font-bold uppercase bg-yellow-100 text-yellow-700';
+    }
+    
+    // Receipt button link
+    const receiptBtn = document.getElementById('receipt-btn');
+    if (txn.status === 'completed') {
+        receiptBtn.classList.remove('hidden');
+        receiptBtn.href = 'receipt.php?id=' + txn.reference;
+    } else {
+        receiptBtn.classList.add('hidden');
+    }
+    
+    // Icon
+    const iconContainer = document.getElementById('txn-icon-container');
+    const icon = document.getElementById('txn-icon');
+    const types = {
+        data: { bg: 'bg-blue-100', text: 'text-blue-500', icon: 'fa-wifi' },
+        airtime: { bg: 'bg-green-100', text: 'text-green-500', icon: 'fa-phone' },
+        cable: { bg: 'bg-purple-100', text: 'text-purple-500', icon: 'fa-tv' },
+        electricity: { bg: 'bg-yellow-100', text: 'text-yellow-500', icon: 'fa-bolt' },
+        exam: { bg: 'bg-red-100', text: 'text-red-500', icon: 'fa-graduation-cap' },
+        funding: { bg: 'bg-indigo-100', text: 'text-indigo-500', icon: 'fa-credit-card' }
+    };
+    const t = types[txn.type] || { bg: 'bg-gray-100', text: 'text-gray-500', icon: 'fa-receipt' };
+    iconContainer.className = `w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 ${t.bg} ${t.text}`;
+    icon.className = `fas ${t.icon} text-2xl`;
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+        modalContent.classList.remove('scale-95', 'opacity-0');
+        modalContent.classList.add('scale-100', 'opacity-100');
+    }, 10);
+}
+
+function closeTxnModal() {
+    modalContent.classList.replace('scale-100', 'scale-95');
+    modalContent.classList.replace('opacity-100', 'opacity-0');
+    setTimeout(() => {
+        modal.classList.add('hidden');
+    }, 300);
+}
+</script>
 <script src="<?php echo APP_URL; ?>/assets/js/app.js"></script>
 </body></html>
